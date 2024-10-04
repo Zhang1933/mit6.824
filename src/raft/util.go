@@ -54,12 +54,3 @@ func GetElectRandomTimeout() int {
 	// 选举超时间隔 TODO:测试时间间隔
 	return rand.Intn(50) + ElectTimeout
 }
-
-func (rf *Raft) FindTermFirstIdx(Xterm int, right int) int {
-	// 从right开始,找到日志中第一个Xterm对应的idx,使用前需锁
-	i := right
-	for i >= 0 && rf.log[i].Term >= Xterm {
-		i--
-	}
-	return i + 1
-}
