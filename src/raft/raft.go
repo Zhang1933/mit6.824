@@ -78,10 +78,13 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+
+	heartTimer  *time.Timer
 	currentTerm int
 	votedFor    int
 	log         []Entry
 
+	condApply   *sync.Cond
 	commitIndex int
 	lastApplied int
 
@@ -158,7 +161,7 @@ func (rf *Raft) readPersist(data []byte) {
 	var lastIncludedTerm int
 	if d.Decode(&votedFor) != nil ||
 		d.Decode(&currentTerm) != nil || d.Decode(&log) != nil || d.Decode(&lastIncludedIndex) != nil || d.Decode(&lastIncludedTerm) != nil {
-		DPrintf(dError, "readPersist failed\n")
+		DPrintf(dPersist, "server%vreadPersist失败,len(log)%v\n", rf.me, len(log))
 	} else {
 		rf.votedFor = votedFor
 		rf.currentTerm = currentTerm
@@ -167,6 +170,7 @@ func (rf *Raft) readPersist(data []byte) {
 		rf.lastIncludedTerm = lastIncludedTerm
 		rf.commitIndex = lastIncludedIndex
 		rf.lastApplied = lastIncludedIndex
+		DPrintf(dPersist, "server%vreadPersist成功,len(log)%v\n", rf.me, len(log))
 	}
 }
 
@@ -355,40 +359,95 @@ func (rf *Raft) handleHeartBeat(serverTo int, argsP *AppendEntriesArgs) {
 			DPrintf(dLog2, "返回成功,更新server:%v的nextIndex:%v,argsP.PrevLogIndex:%v\n", serverTo, rf.nextIndex[serverTo], argsP.PrevLogIndex)
 		}
 	}
+
+	N := rf.realidx2virtualidx(len(rf.log) - 1)
+	for N > rf.commitIndex {
+		cnt := 1
+		for i := 0; i < len(rf.peers); i++ {
+			if i == rf.me {
+				continue
+			}
+			if rf.matchIndex[i] >= N && rf.log[rf.virtual2realidx(N)].Term == rf.currentTerm {
+				cnt += 1
+			}
+		}
+		if cnt >= (len(rf.peers)+1)/2 {
+			break
+		}
+		N -= 1
+	}
+	rf.commitIndex = N
+	rf.condApply.Signal()
+
 	rf.persist()
 }
 
-func (rf *Raft) updateLastApply() {
-
-	for {
+func (rf *Raft) CommitChecker() {
+	// 检查是否有新的commit
+	DPrintf(dCommit, "server %v 的 CommitChecker 开始运行", rf.me)
+	for !rf.killed() {
 		rf.mu.Lock()
-		DPrintf(dCommit, "server %v commit,commitidx:%v,lastApplied:%v,log len:%v,lastidx:%v\n", rf.me, rf.commitIndex, rf.lastApplied, len(rf.log), rf.lastIncludedIndex)
-		if rf.commitIndex <= rf.lastApplied {
-			break
+		// DPrintf("server %v CommitChecker 获取锁mu", rf.me)
+		for rf.commitIndex <= rf.lastApplied {
+			rf.condApply.Wait()
 		}
-		select {
-		case rf.applyCh <- ApplyMsg{
-			CommandValid: true,
-			Command:      rf.log[rf.virtual2realidx(rf.lastApplied+1)].Command,
-			CommandIndex: rf.lastApplied + 1,
-		}:
-			rf.lastApplied += 1
+		msgBuf := make([]*ApplyMsg, 0, rf.commitIndex-rf.lastApplied)
+		tmpApplied := rf.lastApplied
+		for rf.commitIndex > tmpApplied {
+			tmpApplied += 1
+			if tmpApplied <= rf.lastIncludedIndex {
+				// tmpApplied可能是snapShot中已经被截断的日志项, 这些日志项就不需要再发送了
+				continue
+			}
+			if rf.virtual2realidx(tmpApplied) >= len(rf.log) {
+				DPrintf(dCommit, "server %v CommitChecker数组越界: tmpApplied=%v,  rf.RealLogIdx(tmpApplied)=%v>=len(rf.log)=%v, lastIncludedIndex=%v", rf.me, tmpApplied, rf.virtual2realidx(tmpApplied), len(rf.log), rf.lastIncludedIndex)
+			}
+			msg := &ApplyMsg{
+				CommandValid: true,
+				Command:      rf.log[rf.virtual2realidx(tmpApplied)].Command,
+				CommandIndex: tmpApplied,
+				SnapshotTerm: rf.log[rf.virtual2realidx(tmpApplied)].Term,
+			}
+
+			msgBuf = append(msgBuf, msg)
+		}
+		rf.mu.Unlock()
+		// DPrintf("server %v CommitChecker 释放锁mu", rf.me)
+
+		// 注意, 在解锁后可能又出现了SnapShot进而修改了rf.lastApplied
+		for _, msg := range msgBuf {
+			rf.mu.Lock()
+			if msg.CommandIndex != rf.lastApplied+1 {
+				rf.mu.Unlock()
+				continue
+			}
+			DPrintf(dCommit, "server %v 准备commit, log = %v:%v, lastIncludedIndex=%v", rf.me, msg.CommandIndex, msg.SnapshotTerm, rf.lastIncludedIndex)
+
 			rf.mu.Unlock()
-		default:
+			// 注意, 在解锁后可能又出现了SnapShot进而修改了rf.lastApplied
+
+			rf.applyCh <- *msg
+
+			rf.mu.Lock()
+			if msg.CommandIndex != rf.lastApplied+1 {
+				rf.mu.Unlock()
+				continue
+			}
+			rf.lastApplied = msg.CommandIndex
 			rf.mu.Unlock()
 		}
 	}
-	rf.mu.Unlock()
 }
 
 func (rf *Raft) SendHeartBeats() {
 	for !rf.killed() {
+		<-rf.heartTimer.C
 		rf.mu.Lock()
 		if rf.role != Leader {
 			rf.mu.Unlock()
 			return
 		}
-		DPrintf(dLeader, "leader %v 发送心跳Term:%v,leader log len:%v,lastlogterm:%v,lastidx:%v\n", rf.me, rf.currentTerm, len(rf.log), rf.log[len(rf.log)-1].Term, rf.lastIncludedIndex)
+		DPrintf(dLeader, "leader %v 发送心跳Term:%v,leader log len:%v,lastlogterm:%v,lastidx:%v,lastapply%v\n", rf.me, rf.currentTerm, len(rf.log), rf.log[len(rf.log)-1].Term, rf.lastIncludedIndex, rf.lastApplied)
 		for i := 0; i < len(rf.peers); i++ {
 			if i == rf.me {
 				continue
@@ -414,42 +473,14 @@ func (rf *Raft) SendHeartBeats() {
 					LeaderCommit: rf.commitIndex,
 				}
 				if rf.realidx2virtualidx(len(rf.log)) > rf.nextIndex[i] {
-					DPrintf(dCommit, "leader %v 向 server %v 添加新的Entries,leader log len:%v,follower nextidx:%v\n", rf.me, i, len(rf.log), rf.nextIndex[i])
 					args.Entries = rf.log[rf.virtual2realidx(rf.nextIndex[i]):]
+					DPrintf(dCommit, "leader %v 向 server %v 添加新的Entries,leader log len:%v,follower nextidx:%v\n", rf.me, i, len(rf.log), rf.nextIndex[i])
 				}
 				go rf.handleHeartBeat(i, &args)
 			}
 		}
 		rf.mu.Unlock()
-		time.Sleep(time.Duration(HeartBeatTimeOut) * time.Millisecond)
-		/*
-			If there exists an N such that N > commitIndex, a majority of matchIndex[i] ≥ N, and log[N].term == currentTerm:
-			set commitIndex = N (§5.3, §5.4).
-		*/
-		rf.mu.Lock()
-		if rf.role != Leader {
-			rf.mu.Unlock()
-			return
-		}
-		N := rf.realidx2virtualidx(len(rf.log) - 1)
-		for N > rf.commitIndex {
-			cnt := 1
-			for i := 0; i < len(rf.peers); i++ {
-				if i == rf.me {
-					continue
-				}
-				if rf.matchIndex[i] >= N && rf.log[rf.virtual2realidx(N)].Term == rf.currentTerm {
-					cnt += 1
-				}
-			}
-			if cnt >= (len(rf.peers)+1)/2 {
-				break
-			}
-			N -= 1
-		}
-		rf.commitIndex = N
-		go rf.updateLastApply()
-		rf.mu.Unlock()
+		rf.heartTimer.Reset(time.Duration(HeartBeatTimeOut) * time.Millisecond)
 	}
 }
 
@@ -480,6 +511,12 @@ func (rf *Raft) AppendEntriesReceive(argsP *AppendEntriesArgs, replyP *AppendEnt
 		replyP.Success = false
 		return
 	}
+	if rf.virtual2realidx(argsP.PrevLogIndex) < 0 {
+		// 已经被快照过了
+		replyP.Success = true
+		replyP.Term = rf.currentTerm
+		return
+	}
 	if rf.log[rf.virtual2realidx(argsP.PrevLogIndex)].Term != argsP.PrevLogTerm {
 
 		replyP.Xterm = rf.log[rf.virtual2realidx(argsP.PrevLogIndex)].Term
@@ -494,13 +531,27 @@ func (rf *Raft) AppendEntriesReceive(argsP *AppendEntriesArgs, replyP *AppendEnt
 		// but different terms), delete the existing entry and all that
 		// follow it (§5.3)
 		// 4. Append any new entries not already in the log ，防止同一个log重复添加
-		rf.log = append(rf.log[:rf.virtual2realidx(argsP.PrevLogIndex+1)], argsP.Entries...)
+
+		for idx, log := range argsP.Entries {
+			ridx := rf.virtual2realidx(argsP.PrevLogIndex) + 1 + idx
+			if ridx < len(rf.log) && rf.log[ridx].Term != log.Term {
+				// 某位置发生了冲突, 覆盖这个位置开始的所有内容
+				rf.log = rf.log[:ridx]
+				rf.log = append(rf.log, argsP.Entries[idx:]...)
+				break
+			} else if ridx == len(rf.log) {
+				// 没有发生冲突但长度更长了, 直接拼接
+				rf.log = append(rf.log, argsP.Entries[idx:]...)
+				break
+			}
+		}
+
 		DPrintf(dLog2, "server:%v添加日志项len: %v,lastlogterm%v,lastidx%v\n", rf.me, len(rf.log), rf.log[len(rf.log)-1].Term, rf.lastIncludedIndex)
 		rf.persist()
 	}
 	if argsP.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = int(math.Min(float64(argsP.LeaderCommit), float64(rf.realidx2virtualidx(len(rf.log)-1))))
-		go rf.updateLastApply()
+		rf.condApply.Signal()
 	}
 	replyP.Success = true
 	replyP.Term = rf.currentTerm
@@ -617,6 +668,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.heartTimer.Reset(time.Duration(1) * time.Millisecond)
 	if rf.role != Leader {
 		return -1, -1, false
 	}
@@ -701,6 +753,7 @@ func (rf *Raft) colloctVote(args *RequestVoteArgs, serverTo int) {
 				rf.nextIndex[i] = rf.realidx2virtualidx(len(rf.log))
 				rf.matchIndex[i] = 0
 			}
+			rf.heartTimer = time.NewTimer(1)
 			go rf.SendHeartBeats()
 		}
 	}
@@ -748,17 +801,21 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.currentTerm = 0
 
 	rf.applyCh = applyCh
+	rf.condApply = sync.NewCond(&rf.mu)
+
 	rf.log = make([]Entry, 0)
 	rf.log = append(rf.log, Entry{Term: 0})
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
 	rf.role = Follower
 	rf.timeStamp = time.Now()
+	rf.heartTimer = time.NewTimer(0)
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 	rf.readSnapshot(persister.ReadSnapshot())
 	// start ticker goroutine to start elections
 	go rf.ticker()
+	go rf.CommitChecker()
 
 	return rf
 }

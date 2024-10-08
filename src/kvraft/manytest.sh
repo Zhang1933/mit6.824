@@ -7,7 +7,7 @@ fail_count=0
 
 # 设置测试次数
 max_tests=50
-threads=50  # 设置线程数
+threads=$max_tests  # 设置线程数
 
 # 定义一个函数来运行单个测试
 run_test() {
@@ -15,7 +15,7 @@ run_test() {
     echo "Running test iteration $i of $max_tests..."
 
     # 运行 go 测试命令
-    go test -v -run 2C &> output2D_$i.log
+    go test -v -run 3A &> output3A_$i.log
     
     # 检查 go 命令的退出状态
     if [ "$?" -eq 0 ]; then
@@ -27,7 +27,7 @@ run_test() {
     else
         # 测试失败
         echo "Test iteration $i failed, check 'failure2C_$i.log' for details."
-        mv output2D_$i.log "failure2D_$i.log"
+        mv output3A_$i.log "failure3A_$i.log"
         fail_count=$((fail_count+1))
     fi
 }
