@@ -21,6 +21,7 @@ const (
 	dTrace  logTopic = "TRCE"
 	dWarn   logTopic = "WARN"
 	ddbexe  logTopic = "DBexecute"
+	dSnap   logTopic = "SNAP"
 )
 
 var debugStart time.Time

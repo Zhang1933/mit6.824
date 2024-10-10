@@ -6,16 +6,18 @@ success_count=0
 fail_count=0
 
 # 设置测试次数
-max_tests=50
+max_tests=100
 threads=$max_tests  # 设置线程数
+testcase=3B
+testtime=2
 
 # 定义一个函数来运行单个测试
 run_test() {
     local i=$1
-    echo "Running test iteration $i of $max_tests..."
+    echo "Running test $testcase $testtime iteration $i of $max_tests..."
 
     # 运行 go 测试命令
-    go test -v -run 3A &> output3A_$i.log
+    go test -v -run $testcase &> output$testcase-$testtime-$i.log
     
     # 检查 go 命令的退出状态
     if [ "$?" -eq 0 ]; then
@@ -26,8 +28,8 @@ run_test() {
         # mv output2C_$i.log "success_$i.log"
     else
         # 测试失败
-        echo "Test iteration $i failed, check 'failure2C_$i.log' for details."
-        mv output3A_$i.log "failure3A_$i.log"
+        echo "Test iteration $i failed, check 'failure$testcase-$testtime-$i.log' for details."
+        mv output$testcase-$testtime-$i.log "failure$testcase-$testtime-$i.log"
         fail_count=$((fail_count+1))
     fi
 }

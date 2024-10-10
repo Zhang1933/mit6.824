@@ -52,25 +52,25 @@ func (ck *Clerk) Get(key string) string {
 	// You will have to modify this function.
 	args := GetArgs{Key: key, Seq: ck.getseq(), Identifier: ck.identifier}
 	reply := GetReply{}
-	DPrintf(dClient, "client%v发送操作请求Get,op:%+v\n", ck.identifier, args)
 	for {
+		DPrintf(dClient, "client发送操作请求Get,argsop:%+v,tryleader%v\n", args, ck.leaderId)
 		ok := ck.servers[ck.leaderId].Call("KVServer.Get", &args, &reply)
 		if !ok || reply.Err == ErrWrongLeader {
-			DPrintf(dClient, "client %v,reply.Err %+v,ck.leaderId%v,op seq%v\n", ck.identifier, reply.Err, ck.leaderId, args.Seq)
+			DPrintf(dClient, "client重试操作请求Get,reply.Err %s,op%+v\n", reply.Err, args)
 			ck.leaderId += 1
 			ck.leaderId %= len(ck.servers)
 			continue
 		}
-		switch reply.Err {
-		case ErrChanClose:
-			continue
-		case ErrNoKey:
-			DPrintf(dClient, "ErrNoKey client %v,reply.Err %+v,op seq%v\n", ck.identifier, reply.Err, args.Seq)
-			return reply.Value
-		}
+		DPrintf(dClient, "请求执行成功argsop:%+v\n", args)
 		return reply.Value
 	}
 }
+
+// func CltRPCRandSleepRetry() {
+// 	// NOTE:高并发下RPC同时返回容易阻塞。随机休眠一段时间再试
+// 	ms := nrand()%43 + 7
+// 	time.Sleep(time.Millisecond * time.Duration(ms))
+// }
 
 // shared by Put and Append.
 //
@@ -84,22 +84,24 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
 	args := PutAppendArgs{Key: key, Value: value, Op: op, Seq: ck.getseq(), Identifier: ck.identifier}
 	reply := PutAppendReply{}
-	DPrintf(dClient, "client%v发送操作请求PutAppend,op:%+v\n", ck.identifier, args)
 	for {
+		DPrintf(dClient, "client发送操作请求PutAppend,op:%+v,tryleader:%v\n", args, ck.leaderId)
 		ok := ck.servers[ck.leaderId].Call("KVServer.PutAppend", &args, &reply)
 		if !ok || reply.Err == ErrWrongLeader {
-			DPrintf(dClient, "client %v,reply.Err %+v,ck.leaderId%v,op seq%v\n", ck.identifier, reply.Err, ck.leaderId, args.Seq)
+			DPrintf(dClient, "client重试操作请求PutAppend,reply.Err %s,ck.leaderId%v,op%+v\n", reply.Err, ck.leaderId, args)
 			ck.leaderId += 1
 			ck.leaderId %= len(ck.servers)
 			continue
 		}
 		switch reply.Err {
 		case ErrChanClose:
+			// CltRPCRandSleepRetry()
 			continue
 		case ErrUndefine:
-			DPrintf(dClient, "ErrUndefine client %v,reply.Err %+v,op seq%v\n", ck.identifier, reply.Err, args.Seq)
+			DPrintf(dClient, "ErrUndefine client %v,reply.Err %s,op seq%v\n", ck.identifier, reply.Err, args.Seq)
 			continue
 		}
+		DPrintf(dClient, "PutAppend操作请求执行成功%+v", args)
 		return
 	}
 }
