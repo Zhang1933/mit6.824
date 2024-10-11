@@ -6,9 +6,9 @@ success_count=0
 fail_count=0
 
 # 设置测试次数
-max_tests=100
-threads=$max_tests  # 设置线程数
-testcase=3B
+max_tests=300
+threads=100  # 设置线程数
+testcase=3A
 testtime=2
 
 # 定义一个函数来运行单个测试

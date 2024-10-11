@@ -96,7 +96,7 @@ func (kv *KVServer) LoadSnapshot(snapshot []byte) {
 		DPrintf(dInfo, "server %v快照加载成功", kv.me)
 	}
 	if len(kv.db) == 0 {
-		panic("加载快照后db为空")
+		DPrintf(dWarn, "加载快照后db为空")
 	}
 }
 
@@ -194,7 +194,7 @@ func (kv *KVServer) ApplyHandler() {
 			// 如果是一个快照
 			kv.mu.Lock()
 			// NOTE:发送快照的包，有可能网络延迟，收到旧快照
-			if log.SnapshotIndex <= kv.lastapplied {
+			if log.SnapshotIndex < kv.lastapplied {
 				DPrintf(dWarn, "server %v,db中已经包含新的快照log.SnapshotIndex:%v,kv.lastapplied%v\n", kv.me, log.SnapshotIndex, kv.lastapplied)
 				kv.mu.Unlock()
 				continue
