@@ -38,3 +38,11 @@
 ### 2整体测试
 
 ![alt text](images/image-10.png)
+
+### 4A
+
+300次没报错
+
+
+
+![alt text](images/image-14.png)

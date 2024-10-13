@@ -1,5 +1,11 @@
 package shardctrler
 
+import (
+	"time"
+
+	"6.5840/raft"
+)
+
 //
 // Shard controler: assigns shards to replication groups.
 //
@@ -29,13 +35,26 @@ type Config struct {
 }
 
 const (
-	OK = "OK"
+	HandleOpTimeOut = time.Millisecond * (raft.ElectTimeout)
+)
+
+type Pair struct {
+	First  int64
+	Second uint64
+}
+
+const (
+	OK             = "OK"
+	ErrWrongLeader = "ErrWrongLeader"
+	ErrUndefine    = "ErrUndefine"
 )
 
 type Err string
 
 type JoinArgs struct {
-	Servers map[int][]string // new GID -> servers mappings
+	Servers    map[int][]string // new GID -> servers mappings
+	Seq        uint64
+	Identifier int64
 }
 
 type JoinReply struct {
@@ -44,7 +63,9 @@ type JoinReply struct {
 }
 
 type LeaveArgs struct {
-	GIDs []int
+	GIDs       []int
+	Seq        uint64
+	Identifier int64
 }
 
 type LeaveReply struct {
@@ -53,8 +74,10 @@ type LeaveReply struct {
 }
 
 type MoveArgs struct {
-	Shard int
-	GID   int
+	Shard      int
+	GID        int
+	Seq        uint64
+	Identifier int64
 }
 
 type MoveReply struct {
@@ -63,7 +86,9 @@ type MoveReply struct {
 }
 
 type QueryArgs struct {
-	Num int // desired config number
+	Num        int // desired config number
+	Seq        uint64
+	Identifier int64
 }
 
 type QueryReply struct {

@@ -8,8 +8,8 @@ fail_count=0
 # 设置测试次数
 max_tests=300
 threads=100  # 设置线程数
-testcase=3B
-esttime=2
+testcase=""
+testtime=2
 
 # 定义一个函数来运行单个测试
 run_test() {
@@ -17,7 +17,7 @@ run_test() {
     echo "Running test $testcase $testtime iteration $i of $max_tests..."
 
     # 运行 go 测试命令
-    go test -v -run $testcase &> output$testcase-$testtime-$i.log
+    go test  $testcase &> output$testcase-$testtime-$i.log
     
     # 检查 go 命令的退出状态
     if [ "$?" -eq 0 ]; then
@@ -53,4 +53,5 @@ wait
 echo "Testing completed: $max_tests iterations run."
 echo "Successes: $success_count"
 echo "Failures: $fail_count"
+
 

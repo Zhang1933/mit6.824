@@ -4,14 +4,20 @@ package shardctrler
 // Shardctrler clerk.
 //
 
-import "6.5840/labrpc"
-import "time"
-import "crypto/rand"
-import "math/big"
+import (
+	"crypto/rand"
+	"math/big"
+	"time"
+
+	"6.5840/labrpc"
+)
 
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// Your data here.
+	seq        uint64
+	identifier int64
+	leaderId   int
 }
 
 func nrand() int64 {
@@ -21,23 +27,30 @@ func nrand() int64 {
 	return x
 }
 
+func (ck *Clerk) getseq() (Seqres uint64) {
+	Seqres = ck.seq
+	ck.seq += 1
+	return
+}
+
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// Your code here.
+	ck.identifier = nrand()
+	ck.seq = 0
 	return ck
 }
 
 func (ck *Clerk) Query(num int) Config {
-	args := &QueryArgs{}
-	// Your code here.
-	args.Num = num
+	args := &QueryArgs{Num: num, Seq: ck.getseq(), Identifier: ck.identifier}
 	for {
 		// try each known server.
-		for _, srv := range ck.servers {
+		for id, srv := range ck.servers {
 			var reply QueryReply
 			ok := srv.Call("ShardCtrler.Query", args, &reply)
-			if ok && reply.WrongLeader == false {
+			if ok && !reply.WrongLeader {
+				DPrintf(dClient, "Query返回成功op:%+v reply%+v tryleader%v", args, reply, id)
 				return reply.Config
 			}
 		}
@@ -46,16 +59,15 @@ func (ck *Clerk) Query(num int) Config {
 }
 
 func (ck *Clerk) Join(servers map[int][]string) {
-	args := &JoinArgs{}
+	args := &JoinArgs{Servers: servers, Seq: ck.getseq(), Identifier: ck.identifier}
 	// Your code here.
-	args.Servers = servers
-
 	for {
 		// try each known server.
-		for _, srv := range ck.servers {
+		for id, srv := range ck.servers {
 			var reply JoinReply
 			ok := srv.Call("ShardCtrler.Join", args, &reply)
-			if ok && reply.WrongLeader == false {
+			if ok && !reply.WrongLeader {
+				DPrintf(dClient, "Join返回成功op:%+v reply%+v tryleader%v", args, reply, id)
 				return
 			}
 		}
@@ -64,16 +76,15 @@ func (ck *Clerk) Join(servers map[int][]string) {
 }
 
 func (ck *Clerk) Leave(gids []int) {
-	args := &LeaveArgs{}
+	args := &LeaveArgs{GIDs: gids, Seq: ck.getseq(), Identifier: ck.identifier}
 	// Your code here.
-	args.GIDs = gids
-
 	for {
 		// try each known server.
-		for _, srv := range ck.servers {
+		for id, srv := range ck.servers {
 			var reply LeaveReply
 			ok := srv.Call("ShardCtrler.Leave", args, &reply)
-			if ok && reply.WrongLeader == false {
+			if ok && !reply.WrongLeader {
+				DPrintf(dClient, "Leave返回成功op:%+v reply%+v tryleader%v", args, reply, id)
 				return
 			}
 		}
@@ -82,17 +93,15 @@ func (ck *Clerk) Leave(gids []int) {
 }
 
 func (ck *Clerk) Move(shard int, gid int) {
-	args := &MoveArgs{}
+	args := &MoveArgs{Shard: shard, GID: gid, Seq: ck.getseq(), Identifier: ck.identifier}
 	// Your code here.
-	args.Shard = shard
-	args.GID = gid
-
 	for {
 		// try each known server.
-		for _, srv := range ck.servers {
+		for id, srv := range ck.servers {
 			var reply MoveReply
 			ok := srv.Call("ShardCtrler.Move", args, &reply)
-			if ok && reply.WrongLeader == false {
+			if ok && !reply.WrongLeader {
+				DPrintf(dClient, "Move返回成功op:%+v reply%+v tryleader%v", args, reply, id)
 				return
 			}
 		}
