@@ -38,3 +38,11 @@
 ### 2整体测试
 
 ![alt text](images/image-10.png)
+
+## 架构
+
+![alt text](images/image-13.png)
+
+## 操作请求流程图
+
+![alt text](images/image-12.png)
