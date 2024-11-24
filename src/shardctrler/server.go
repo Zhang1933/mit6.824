@@ -416,7 +416,7 @@ The Move RPC's arguments are a shard number and a GID. The shardctrler should cr
 */
 func (sc *ShardCtrler) MoveHandler(MoveGID int, MoveShard int) (res *Config) {
 	lastConfig := sc.configs[len(sc.configs)-1]
-	DPrintf(dMove, "server %v Move shard%v到GID%v,Move之前的配置%+v", MoveShard, MoveGID, lastConfig)
+	DPrintf(dMove, "server %v Move shard%v到GID%v,Move之前的配置%+v", sc.me, MoveShard, MoveGID, lastConfig)
 	res = &Config{
 		Num:    len(sc.configs),
 		Shards: [NShards]int{},
@@ -429,7 +429,7 @@ func (sc *ShardCtrler) MoveHandler(MoveGID int, MoveShard int) (res *Config) {
 	}
 	res.Shards[MoveShard] = MoveGID
 
-	DPrintf(dMove, "server %v Move shard%v到GID%v,Move之后的配置%+v", MoveShard, MoveGID, res)
+	DPrintf(dMove, "server %v Move shard%v到GID%v,Move之后的配置%+v", sc.me, MoveShard, MoveGID, res)
 	return
 }
 

@@ -43,6 +43,8 @@
 
 300次没报错
 
-
-
 ![alt text](images/image-14.png)
+
+### 4B
+
+分布式容错KV数据库
