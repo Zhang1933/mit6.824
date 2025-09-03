@@ -32,7 +32,7 @@ const (
 
 var debugStart time.Time
 
-const debugVerbosity = 1
+const DebugVerbosity = 1
 
 func init() {
 
@@ -41,7 +41,7 @@ func init() {
 }
 
 func DPrintf(topic logTopic, format string, a ...interface{}) {
-	if debugVerbosity >= 1 {
+	if DebugVerbosity >= 1 {
 		time := time.Since(debugStart).Microseconds()
 		time /= 100
 		prefix := fmt.Sprintf("%06d %v ", time, string(topic))

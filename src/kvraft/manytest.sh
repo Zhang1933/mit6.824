@@ -6,10 +6,10 @@ success_count=0
 fail_count=0
 
 # 设置测试次数
-max_tests=100
-threads=$max_tests  # 设置线程数
-testcase=2D
-testtime=2
+max_tests=300
+threads=100  # 设置线程数
+testcase=3B
+esttime=2
 
 # 定义一个函数来运行单个测试
 run_test() {
@@ -53,5 +53,4 @@ wait
 echo "Testing completed: $max_tests iterations run."
 echo "Successes: $success_count"
 echo "Failures: $fail_count"
-
 
